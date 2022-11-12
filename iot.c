@@ -2,6 +2,8 @@
 #include "ThingSpeak.h"
 #include <string.h>
 
+#define LED_PIN 2
+
 ////////////// Network constant /////////////
 #define CONNECTING_THRESHOLD 20
 #define THINGSPEAK_PORT 80
@@ -14,19 +16,24 @@ WiFiClient client;
 ////////// End of Network constant //////////
 
 // AC712-5A Sensor's constains
+// unit: V, A, W
+
 #define AC712_ANALOG_IN A0
 #define VOLTAGE_OFFSET 24
 #define AMPERAGE_SENSITIVITY (66.0f / 1000.0f)
 #define VOLTAGE_PER_POINT (5.0f / 1024.0f)
+#define POWER_USAGE_THRESHOLD 5
 float power_timer;
 float total_power_usage;
 ////////// End of AC712 //////////
 
 // YF-S201 Sensor's constains
+// unit: ml
 #define YFS201_DATA_IN D2
 #define FLOW_SENSITIVITY 355.0f / 175.0f
+#define WATER_USAGE_THRESHOLD 1000
 volatile long pulse;
-// unit: ml
+
 float total_volume;
 float water_timer;
 ////////// End of YF-S201 //////////
@@ -71,6 +78,31 @@ float calculate_flow_rate() {
   }
 
   return flow_rate;
+}
+
+void led_blink() {
+  digitalWrite(LED_PIN, HIGH);
+  delay(1000);
+  digitalWrite(LED_PIN, LOW);
+  delay(1000);
+}
+
+void check_if_water_usage_overflow() {
+  if (total_volume >= WATER_USAGE_THRESHOLD) {
+    led_blink();
+    Serial.print("Total water usage has exceed `");
+    Serial.print(WATER_USAGE_THRESHOLD);
+    Serial.println("ml`");
+  } else digitalWrite(LED_PIN, LOW);
+}
+
+void check_if_power_usage_overflow() {
+  if (total_power_usage >= POWER_USAGE_THRESHOLD) {
+    led_blink();
+    Serial.print("Total power usage has exceed `");
+    Serial.print(POWER_USAGE_THRESHOLD);
+    Serial.println("W`");
+  } else digitalWrite(LED_PIN, LOW);
 }
 
 void connect_to_wifi() {
@@ -141,6 +173,7 @@ void upload_data(float *data, uint32_t size) {
 void setup() {
   // put your setup code here, to run once:
   pinMode(YFS201_DATA_IN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
   Serial.begin(9600);
   delay(10);
   connect_to_wifi();
@@ -156,8 +189,11 @@ void loop() {
   delay(1000);
   float flow_rate = calculate_flow_rate();
   float power_usage = calculate_power_usage();
-  
   float data[] = { power_usage, total_power_usage, flow_rate, total_volume };
+
+  check_if_power_usage_overflow();
+  check_if_water_usage_overflow();
+
   upload_data(data, (sizeof(data) / sizeof(data[0])));
 
   for (int i = 0; i < (sizeof(data) / sizeof(data[0])); ++i) {
