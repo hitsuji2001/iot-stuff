@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include "ThingSpeak.h"
 #include <string.h>
+#include <curl/curl.h>
 
 #define LED_PIN 2
 
@@ -12,6 +13,8 @@ const char *SSID = "Minh Cu";
 const char *PASSWORD = "12345678";
 const char *THINGSPEAK_WRITE_KEY = "8YEPB0J78C2PFPR3";
 const uint32_t THINGSPEAK_CHANNEL_ID = 1928318;
+const char *EMAIL_TYPE_1 = "WATER";
+const char  *EMAIL_TYPE_2 = "ELECTRICITY";
 WiFiClient client;
 ////////// End of Network constant //////////
 
@@ -39,7 +42,6 @@ float water_timer;
 ////////// End of YF-S201 //////////
 
 uint64_t global_timer = 0;
-
 // unit: V
 float calculate_voltage() {
   int counts = analogRead(AC712_ANALOG_IN) - VOLTAGE_OFFSET;
@@ -85,6 +87,38 @@ void led_blink() {
   delay(1000);
   digitalWrite(LED_PIN, LOW);
   delay(1000);
+}
+
+void create_request_send_email_to_service(char *url, char *body) {
+  CURL *curl;
+  CURLcode res;
+
+  curl_global_init(CURL_GLOBAL_ALL);
+ 
+  curl = curl_easy_init();
+  if(curl) {
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+ //"name=daniel&project=curl"
+    res = curl_easy_perform(curl);
+    if(res != CURLE_OK)
+      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+    curl_easy_strerror(res));
+ 
+    curl_easy_cleanup(curl);
+  }
+  curl_global_cleanup();
+}
+
+void send_email(char *type) {
+  if (strcmp(type, EMAIL_TYPE_1) == 0) {
+    create_request_send_email_to_service("http://localhost:3000/email", "type=WATER");
+  }
+  else if (strcmp(type, EMAIL_TYPE_2) == 0) {
+    create_request_send_email_to_service("http://localhost:3000/email", "type=ELECTRICITY");
+  }
+  Serial.print("send email to service email successfully");
+
 }
 
 void check_if_water_usage_overflow() {
