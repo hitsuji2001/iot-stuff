@@ -1,17 +1,27 @@
+#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include "ThingSpeak.h"
 #include <string.h>
 
 #define LED_PIN 2
 
+uint8_t water_email_sent;
+uint8_t power_email_sent;
+
 ////////////// Network constant /////////////
 #define CONNECTING_THRESHOLD 20
 #define THINGSPEAK_PORT 80
+#define SERVER_IP "192.168.4.105"
+#define SERVER_PORT 3000
+#define RECEIVER_EMAIL "minhnguyentuan01@gmail.com"
 
 const char *SSID = "Minh Cu";
 const char *PASSWORD = "12345678";
 const char *THINGSPEAK_WRITE_KEY = "8YEPB0J78C2PFPR3";
 const uint32_t THINGSPEAK_CHANNEL_ID = 1928318;
+const char *WARNING_TYPE_WATER = "WATER";
+const char *WARNING_TYPE_POWER = "ELECTRICITY";
+
 WiFiClient client;
 ////////// End of Network constant //////////
 
@@ -20,7 +30,7 @@ WiFiClient client;
 
 #define AC712_ANALOG_IN A0
 #define VOLTAGE_OFFSET 24
-#define AMPERAGE_SENSITIVITY (66.0f / 1000.0f)
+#define AMPERAGE_SENSITIVITY (185.0f / 1000.0f)
 #define VOLTAGE_PER_POINT (5.0f / 1024.0f)
 #define POWER_USAGE_THRESHOLD 5
 float power_timer;
@@ -39,7 +49,6 @@ float water_timer;
 ////////// End of YF-S201 //////////
 
 uint64_t global_timer = 0;
-
 // unit: V
 float calculate_voltage() {
   int counts = analogRead(AC712_ANALOG_IN) - VOLTAGE_OFFSET;
@@ -87,22 +96,57 @@ void led_blink() {
   delay(1000);
 }
 
+void request_email_to_service(const char *type) {
+  HTTPClient http;
+
+  String url = String("http://") +
+    String(SERVER_IP) +
+    String(":") +
+    String(SERVER_PORT) +
+    String("/email?to=") +
+    String(RECEIVER_EMAIL) +
+    String("&type=") + String(type);
+
+  http.begin(client, url.c_str());
+  int httpCode = http.GET();
+
+  if (httpCode > 0) {
+    String payload = http.getString();
+    Serial.println(payload);
+  }
+
+  if (httpCode == 200) {
+    Serial.print("Successfully sent email to: `");
+    Serial.print(RECEIVER_EMAIL);
+    Serial.println("`");
+  }
+  http.end();
+}
+
 void check_if_water_usage_overflow() {
   if (total_volume >= WATER_USAGE_THRESHOLD) {
     led_blink();
+    if (water_email_sent == 0) {
+      request_email_to_service(WARNING_TYPE_WATER);
+      water_email_sent = 1;
+    }
     Serial.print("Total water usage has exceed `");
     Serial.print(WATER_USAGE_THRESHOLD);
     Serial.println("ml`");
-  } else digitalWrite(LED_PIN, LOW);
+  } else digitalWrite(LED_PIN, HIGH);
 }
 
 void check_if_power_usage_overflow() {
   if (total_power_usage >= POWER_USAGE_THRESHOLD) {
     led_blink();
+    if (power_email_sent == 0) {
+      request_email_to_service(WARNING_TYPE_POWER);
+      power_email_sent = 1;
+    }
     Serial.print("Total power usage has exceed `");
     Serial.print(POWER_USAGE_THRESHOLD);
     Serial.println("W`");
-  } else digitalWrite(LED_PIN, LOW);
+  } else digitalWrite(LED_PIN, HIGH);
 }
 
 void connect_to_wifi() {
@@ -125,7 +169,7 @@ void connect_to_wifi() {
   }
 
   Serial.print("\n");
-  Serial.println("Connection established!");  
+  Serial.println("Connection established!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 }
@@ -174,6 +218,8 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(YFS201_DATA_IN, INPUT);
   pinMode(LED_PIN, OUTPUT);
+  power_email_sent = 0;
+  water_email_sent = 0;
   Serial.begin(9600);
   delay(10);
   connect_to_wifi();
